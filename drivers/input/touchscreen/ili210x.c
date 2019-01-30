@@ -222,6 +222,22 @@ static int ili210x_i2c_probe(struct i2c_client *client,
 		msleep(100);
 	}
 
+	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
+	if (!priv)
+		return -ENOMEM;
+
+	input = devm_input_allocate_device(dev);
+	if (!input)
+		return -ENOMEM;
+
+	priv->client = client;
+	priv->input = input;
+	priv->poll_period = DEFAULT_POLL_PERIOD;
+	INIT_DELAYED_WORK(&priv->dwork, ili210x_work);
+	priv->reset_gpio = reset_gpio;
+
+	i2c_set_clientdata(client, priv);
+
 	/* Get firmware version */
 	error = ili210x_read_reg(client, REG_FIRMWARE_VERSION,
 				 &firmware, sizeof(firmware));
@@ -242,20 +258,6 @@ static int ili210x_i2c_probe(struct i2c_client *client,
 	xmax = panel.x_low | (panel.x_high << 8);
 	ymax = panel.y_low | (panel.y_high << 8);
 
-	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
-	if (!priv)
-		return -ENOMEM;
-
-	input = devm_input_allocate_device(dev);
-	if (!input)
-		return -ENOMEM;
-
-	priv->client = client;
-	priv->input = input;
-	priv->poll_period = DEFAULT_POLL_PERIOD;
-	INIT_DELAYED_WORK(&priv->dwork, ili210x_work);
-	priv->reset_gpio = reset_gpio;
-
 	/* Setup input device */
 	input->name = "ILI210x Touchscreen";
 	input->id.bustype = BUS_I2C;
@@ -274,8 +276,6 @@ static int ili210x_i2c_probe(struct i2c_client *client,
 	input_mt_init_slots(input, MAX_TOUCHES, 0);
 	input_set_abs_params(input, ABS_MT_POSITION_X, 0, xmax, 0, 0);
 	input_set_abs_params(input, ABS_MT_POSITION_Y, 0, ymax, 0, 0);
-
-	i2c_set_clientdata(client, priv);
 
 	error = devm_request_irq(dev, client->irq, ili210x_irq, 0,
 				 client->name, priv);
