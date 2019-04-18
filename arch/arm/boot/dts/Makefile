@@ -464,6 +464,7 @@ dtb-$(CONFIG_SOC_IMX6Q) += \
 	imx6q-dms-ba16.dtb \
 	imx6q-emcon-avari.dtb \
 	imx6q-evi.dtb \
+	imx6q-gemmi.dtb \
 	imx6q-gk802.dtb \
 	imx6q-gw51xx.dtb \
 	imx6q-gw52xx.dtb \

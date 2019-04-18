@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright 2013 Freescale Semiconductor, Inc.
+ * Copyright 2019 Bruetsch Elektronik AG
+ *
+ * Author: Fabio Estevam <fabio.estevam@freescale.com>
+ * Author: Uwe Kaiser <uwe.kaiser@brel.ch>
+ */
+/dts-v1/;
+#include "imx6q.dtsi"
+#include "imx6qdl-gemmi.dtsi"
+
+/ {
+	model = "Gemmi i.MX6 Quad Board revD1";
+	compatible = "gemmi,imx6q-gemmi", "fsl,imx6q";
+
+	memory@10000000 {
+		device_type = "memory";
+		reg = <0x10000000 0x80000000>;
+	};
+};
+
