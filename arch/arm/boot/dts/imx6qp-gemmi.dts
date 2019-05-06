@@ -11,8 +11,8 @@
 #include "imx6qdl-gemmi.dtsi"
 
 / {
-	model = "Gemmi i.MX6 Quad Board revD1";
-	compatible = "gemmi,imx6q-gemmi", "fsl,imx6q";
+	model = "Gemmi i.MX6 Quad Plus Board";
+	compatible = "gemmi,imx6qp-gemmi", "fsl,imx6qp";
 
 	memory@10000000 {
 		device_type = "memory";
