@@ -7,15 +7,45 @@
 #include <dt-bindings/gpio/gpio.h>
 
 / {
+	5v_reg {
+		compatible = "regulator-fixed";
+		gpio = <&gpio_extender 7 0>;
+		regulator-name = "gpio-ext-reg";
+		regulator-always-on;
+		enable-active-high;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+	};
+	/* SGTL5000 codec is powered by 3V3 BUCK_PERI, but controlled
+	 * by GPIO2_25 via a FET transistor
+	 */
+	codec_power: fixedregulator@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "aud_pwr_en";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&gpio2 25 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		vin-supply = <&bperi>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_aud_pwr_en>;
+		status = "okay";
+		regulator-state-mem {
+			regulator-off-in-suspend;
+		};
+		regulator-state-disk {
+			regulator-off-in-suspend;
+		};
+	};
+
 	chosen {
 		stdout-path = &uart4;
 	};
 
 	sound {
-		compatible = "fsl,imx6-wandboard-sgtl5000",
-			     "fsl,imx-audio-sgtl5000";
-		model = "imx6-wandboard-sgtl5000";
-		ssi-controller = <&ssi1>;
+		compatible = "fsl,imx-audio-sgtl5000";
+		model = "sgtl5000-audio";
+		ssi-controller = <&ssi2>;
 		audio-codec = <&codec>;
 		audio-routing =
 			"MIC_IN", "Mic Jack",
@@ -25,29 +55,72 @@
 		mux-ext-port = <3>;
 	};
 
-	sound-spdif {
-		compatible = "fsl,imx-audio-spdif";
-		model = "imx-spdif";
-		spdif-controller = <&spdif>;
-		spdif-out;
+	backlight_lcd: backlight-lcd {
+		compatible = "pwm-backlight";
+		pwms = <&pwm2 0 100000>;
+                power-supply = <&bperi>;
+		brightness-levels = <0 4 8 16 32 64 128 255>;
+		default-brightness-level = <6>;
+		status = "okay";
 	};
 
-	reg_2p5v: regulator-2p5v {
-		compatible = "regulator-fixed";
-		regulator-name = "2P5V";
-		regulator-min-microvolt = <2500000>;
-		regulator-max-microvolt = <2500000>;
-		regulator-always-on;
+
+	lcd_display: disp0 {
+		compatible = "fsl,imx-parallel-display";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interface-pix-fmt = "rgb24";
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_lcd>;
+		status = "okay";
+
+		port@0 {
+			reg = <0>;
+
+			lcd_display_in: endpoint {
+				remote-endpoint = <&ipu1_di0_disp0>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+
+			lcd_display_out: endpoint {
+				remote-endpoint = <&lcd_panel_in>;
+			};
+		};
 	};
 
-	reg_3p3v: regulator-3p3v {
-		compatible = "regulator-fixed";
-		regulator-name = "3P3V";
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		regulator-always-on;
+	panel-lcd {
+                compatible = "auo,g080uan01", "simple-panel";
+                power-supply = <&bperi>;
+                backlight = <&backlight_lcd>;
+		status = "okay";
+
+		port {
+			lcd_panel_in: endpoint {
+				remote-endpoint = <&lcd_display_out>;
+			};
+		};
 	};
 
+};
+&ipu1_csi0_from_ipu1_csi0_mux {
+        bus-width = <8>;
+        data-shift = <12>; /* Lines 19:12 used */
+        hsync-active = <1>;
+        vync-active = <1>;
+};
+
+/*
+&ipu1_csi0_mux_from_parallel_sensor {
+         remote-endpoint = <&ov5642_to_ipu1_csi0_mux>;
+};
+*/
+
+&ipu1_csi0 {
+         pinctrl-names = "default";
+         pinctrl-0 = <&pinctrl_ipu1_csi0>;
 };
 
 &audmux {
@@ -56,8 +129,16 @@
 	status = "okay";
 };
 
+
+&pwm2 {
+        pinctrl-names = "default";
+        pinctrl-0 = <&pinctrl_pwm2>;
+        status = "okay";
+};
+
+
 &hdmi {
-	ddc-i2c-bus = <&i2c1>;
+	ddc-i2c-bus = <&i2c3>;
 	status = "okay";
 };
 
@@ -74,31 +155,293 @@
 	pinctrl-0 = <&pinctrl_i2c2>;
 	status = "okay";
 
+	pmic_dialog: dialog@58 {
+		compatible = "dlg,da9063";
+		reg = <0x58>;
+		interrupt-parent = <&gpio7>;
+		interrupts = <12 2>;
+		interrupt-controller;
+		#interrupt-cells = <2>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pinctrl_pmic_dialog>;
+
+		rtc {
+			compatible = "dlg,da9063-rtc";
+		};
+
+		onkey {
+			compatible = "dlg,da9063-onkey";
+			dlg,key-power;
+		};
+
+		hwmon {
+			compatible = "dlg,da9063-hwmon";
+			dlg,tjunc-offset = <(-5)>;
+		};
+
+		gpio_extender: gpio {
+			compatible = "dlg,da9063-gpio";
+			gpio-controller;
+			#gpio-cells = <2>;
+		};
+
+		regulators {
+			compatible = "dlg,da9063-regulator";
+
+			bcore1: bcore1 {
+				regulator-name = "DA9063_BCORE1";
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			bcore2: bcore2 {
+				regulator-name = "DA9063_BCORE2";
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			bpro: bpro {
+				regulator-name = "DA9063_BPRO";
+				regulator-boot-on;
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+				regulator-state-disk {
+					regulator-off-in-suspend;
+				};
+			};
+
+			bmem: bmem {
+				regulator-name = "DA9063_BMEM";
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			bio: bio {
+				regulator-name = "DA9063_BIO";
+				regulator-boot-on;
+			};
+
+			bperi: bperi {
+				regulator-name = "DA9063_BPERI";
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			ldo2: ldo2 {
+				regulator-name = "DA9063_LDO2";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+				regulator-state-disk {
+					regulator-off-in-suspend;
+				};
+			};
+
+			ldo3: ldo3 {
+				regulator-name = "DA9063_LDO3";
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			ldo4: ldo4 {
+				regulator-name = "DA9063_LDO4";
+				regulator-min-microvolt = <2500000>;
+				regulator-max-microvolt = <2500000>;
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+				regulator-state-disk {
+					regulator-off-in-suspend;
+				};
+			};
+
+			ldo5: ldo5 {
+				regulator-name = "DA9063_LDO5";
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			ldo6: ldo6 {
+				regulator-name = "DA9063_LDO6";
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <3600000>;
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+				regulator-state-disk {
+					regulator-off-in-suspend;
+				};
+			};
+
+			ldo9: ldo9 {
+				regulator-name = "DA9063_LDO9";
+				regulator-min-microvolt = <950000>;
+				regulator-max-microvolt = <3600000>;
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+				regulator-state-disk {
+					regulator-off-in-suspend;
+				};
+			};
+
+			ldo10: ldo10 {
+				regulator-name = "DA9063_LDO10";
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <3600000>;
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+				regulator-state-disk {
+					regulator-off-in-suspend;
+				};
+			};
+
+			ldo11: ldo11 {
+				regulator-name = "DA9063_LDO11";
+				regulator-boot-on;
+				regulator-always-on;
+			};
+		};
+	};
+};
+
+&i2c3 {
+	clock-frequency = <100000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_i2c3>;
+	status = "okay";
+
 	codec: sgtl5000@a {
 		pinctrl-names = "default";
 		pinctrl-0 = <&pinctrl_mclk>;
 		compatible = "fsl,sgtl5000";
 		reg = <0x0a>;
 		clocks = <&clks IMX6QDL_CLK_CKO>;
-		VDDA-supply = <&reg_2p5v>;
-		VDDIO-supply = <&reg_3p3v>;
+		VDDA-supply = <&codec_power>;
+		VDDIO-supply = <&codec_power>;
+	        micbias-voltage-m-volts = <2250>;
 		lrclk-strength = <3>;
 	};
+
+        tc358768: tc358768@e {
+                compatible = "toshiba,tc358768";
+                reg = <0x0e>;
+                data-lines = <24>;
+                lanes = <4>;
+                reset = <&gpio4 5 1>;
+       };
+
+       ili251x: ili251x@41 {
+                compatible = "ilitek,ili251x";
+                reg = <0x41>;
+                interrupt-parent = <&gpio2>;
+                interrupts = <1 IRQ_TYPE_EDGE_FALLING>;
+                reset-gpios = <&gpio4 20 GPIO_ACTIVE_LOW>;
+                touchscreen-size-x = <16384>;
+                touchscreen-size-y = <9600>;
+        };
+
+
+
 };
+
+
+&ipu1_di0_disp0 {
+	remote-endpoint = <&lcd_display_in>;
+};
+
+&fec {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_enet>;
+	phy-mode = "rgmii";
+	phy-reset-gpios  = <&gpio1 25 GPIO_ACTIVE_LOW>;
+	/*interrupts-extended = <&gpio1 6 IRQ_TYPE_LEVEL_HIGH>,
+		              <&intc 0 119 IRQ_TYPE_LEVEL_HIGH>;
+			      */
+
+	//phy-reset-duration = <10>;
+	//phy-reset-wait = <1>;
+	phy-supply = <&ldo4>;
+	//fsl,err006687-workaround-present;
+	fsl,magic-packet;
+	status = "okay";
+};
+
+
+&ssi2 {
+	status = "okay";
+};
+
+&uart4 {
+        pinctrl-names = "default";
+        pinctrl-0 = <&pinctrl_uart4>;
+	status = "okay";
+};
+
+&uart5 {
+        pinctrl-names = "default";
+        pinctrl-0 = <&pinctrl_uart5>;
+	status = "okay";
+};
+
+&usbh1 {
+	status = "okay";
+};
+
+&usdhc1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_usdhc1>;
+	cd-gpios = <&gpio1 2 GPIO_ACTIVE_LOW>;
+	status = "okay";
+};
+
+&usdhc2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_usdhc2>;
+	bus-width = <4>;
+	no-1-8-v;
+	non-removable;
+	status = "okay";
+};
+
+&usdhc3 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_usdhc3>;
+	cd-gpios = <&gpio3 9 GPIO_ACTIVE_LOW>;
+	status = "okay";
+};
+
+&hdmi {
+	ddc-i2c-bus = <&i2c2>;
+	status = "okay";
+};
+
 
 &iomuxc {
 	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_hog>;
 
-	imx6qdl-wandboard {
-
-		pinctrl_audmux: audmuxgrp {
+	imx6qdl-gemmi {
+		pinctrl_hog: hoggrp {
 			fsl,pins = <
-				MX6QDL_PAD_CSI0_DAT7__AUD3_RXD		0x130b0
-				MX6QDL_PAD_CSI0_DAT4__AUD3_TXC		0x130b0
-				MX6QDL_PAD_CSI0_DAT5__AUD3_TXD		0x110b0
-				MX6QDL_PAD_CSI0_DAT6__AUD3_TXFS		0x130b0
+				MX6QDL_PAD_EIM_D22__USB_OTG_PWR		0x80000000	/* USB Power Enable */
+				MX6QDL_PAD_GPIO_2__GPIO1_IO02		0x80000000	/* USDHC1 CD */
+				MX6QDL_PAD_EIM_DA9__GPIO3_IO09		0x80000000	/* uSDHC3 CD */
+				MX6QDL_PAD_EIM_D29__GPIO3_IO29   	0x1f0b1		/* RGMII PHY reset */
+
+				/* TC358768 reset */
+				MX6QDL_PAD_GPIO_19__GPIO4_IO05 0x80000000
 			>;
 		};
+
+		pinctrl_pwm2: pwm2grp {
+			fsl,pins = <
+				MX6QDL_PAD_GPIO_1__PWM2_OUT 0x1b0b1
+			>;
+		};
+
 
 		pinctrl_enet: enetgrp {
 			fsl,pins = <
@@ -117,10 +460,86 @@
 				MX6QDL_PAD_RGMII_RD2__RGMII_RD2		0x1b030
 				MX6QDL_PAD_RGMII_RD3__RGMII_RD3		0x1b030
 				MX6QDL_PAD_RGMII_RX_CTL__RGMII_RX_CTL	0x1b030
-				MX6QDL_PAD_GPIO_16__ENET_REF_CLK	0x4001b0a8
-				MX6QDL_PAD_GPIO_6__ENET_IRQ		0x000b1
+				/* Phy reset */
+				MX6QDL_PAD_ENET_CRS_DV__GPIO1_IO25    0x0f0b0
+                                /* Phy interrupt */
+				MX6QDL_PAD_ENET_TX_EN__GPIO1_IO28     0x1b0b0
+				/*MX6QDL_PAD_GPIO_6__ENET_IRQ           0x000b1*/
 			>;
 		};
+
+		pinctrl_lcd: lcdgrp {
+			fsl,pins = <
+				/* DISP0_CLK */
+				MX6QDL_PAD_DI0_DISP_CLK__IPU1_DI0_DISP_CLK 0xa0
+				/* DISP0_DRDY */
+				MX6QDL_PAD_DI0_PIN15__IPU1_DI0_PIN15       0xa0
+				/* DISP0 VSYNC */
+				MX6QDL_PAD_DI0_PIN3__IPU1_DI0_PIN03        0xa0
+				/* DISP0 HSYNC */
+				MX6QDL_PAD_DI0_PIN2__IPU1_DI0_PIN02        0xa0
+				/* Data bus */
+				MX6QDL_PAD_DISP0_DAT0__IPU1_DISP0_DATA00   0xa0
+				MX6QDL_PAD_DISP0_DAT1__IPU1_DISP0_DATA01   0xa0
+				MX6QDL_PAD_DISP0_DAT2__IPU1_DISP0_DATA02   0xa0
+				MX6QDL_PAD_DISP0_DAT3__IPU1_DISP0_DATA03   0xa0
+				MX6QDL_PAD_DISP0_DAT4__IPU1_DISP0_DATA04   0xa0
+				MX6QDL_PAD_DISP0_DAT5__IPU1_DISP0_DATA05   0xa0
+				MX6QDL_PAD_DISP0_DAT6__IPU1_DISP0_DATA06   0xa0
+				MX6QDL_PAD_DISP0_DAT7__IPU1_DISP0_DATA07   0xa0
+				MX6QDL_PAD_DISP0_DAT8__IPU1_DISP0_DATA08   0xa0
+				MX6QDL_PAD_DISP0_DAT9__IPU1_DISP0_DATA09   0xa0
+				MX6QDL_PAD_DISP0_DAT10__IPU1_DISP0_DATA10  0xa0
+				MX6QDL_PAD_DISP0_DAT11__IPU1_DISP0_DATA11  0xa0
+				MX6QDL_PAD_DISP0_DAT12__IPU1_DISP0_DATA12  0xa0
+				MX6QDL_PAD_DISP0_DAT13__IPU1_DISP0_DATA13  0xa0
+				MX6QDL_PAD_DISP0_DAT14__IPU1_DISP0_DATA14  0xa0
+				MX6QDL_PAD_DISP0_DAT15__IPU1_DISP0_DATA15  0xa0
+				MX6QDL_PAD_DISP0_DAT16__IPU1_DISP0_DATA16  0xa0
+				MX6QDL_PAD_DISP0_DAT17__IPU1_DISP0_DATA17  0xa0
+				MX6QDL_PAD_DISP0_DAT18__IPU1_DISP0_DATA18  0xa0
+				MX6QDL_PAD_DISP0_DAT19__IPU1_DISP0_DATA19  0xa0
+				MX6QDL_PAD_DISP0_DAT20__IPU1_DISP0_DATA20  0xa0
+				MX6QDL_PAD_DISP0_DAT21__IPU1_DISP0_DATA21  0xa0
+				MX6QDL_PAD_DISP0_DAT22__IPU1_DISP0_DATA22  0xa0
+				MX6QDL_PAD_DISP0_DAT23__IPU1_DISP0_DATA23  0xa0
+			>;
+		};
+
+		pinctrl_ipu1_csi0: ipu1csi0grp {
+			fsl,pins = <
+				MX6QDL_PAD_CSI0_DAT12__IPU1_CSI0_DATA12    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT13__IPU1_CSI0_DATA13    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT14__IPU1_CSI0_DATA14    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT15__IPU1_CSI0_DATA15    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT16__IPU1_CSI0_DATA16    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT17__IPU1_CSI0_DATA17    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT18__IPU1_CSI0_DATA18    0x1b0b0
+				MX6QDL_PAD_CSI0_DAT19__IPU1_CSI0_DATA19    0x1b0b0
+				MX6QDL_PAD_CSI0_PIXCLK__IPU1_CSI0_PIXCLK   0x1b0b0
+				MX6QDL_PAD_CSI0_MCLK__IPU1_CSI0_HSYNC      0x1b0b0
+				MX6QDL_PAD_CSI0_VSYNC__IPU1_CSI0_VSYNC     0x1b0b0
+				MX6QDL_PAD_CSI0_DATA_EN__IPU1_CSI0_DATA_EN 0x1b0b0
+			>;
+		};
+
+
+
+		pinctrl_audmux: audmuxgrp {
+			fsl,pins = <
+				MX6QDL_PAD_CSI0_DAT7__AUD3_RXD		0x130b0
+				MX6QDL_PAD_CSI0_DAT4__AUD3_TXC		0x130b0
+				MX6QDL_PAD_CSI0_DAT5__AUD3_TXD		0x110b0
+				MX6QDL_PAD_CSI0_DAT6__AUD3_TXFS		0x130b0
+			>;
+		};
+
+		pinctrl_aud_pwr_en: aud_pwr_en {
+			fsl,pins = <
+				MX6QDL_PAD_EIM_OE__GPIO2_IO25 0x80000000
+			>;
+		};
+
 
 		pinctrl_i2c1: i2c1grp {
 			fsl,pins = <
@@ -136,42 +555,42 @@
 			>;
 		};
 
+		pinctrl_i2c3: i2c3grp {
+			fsl,pins = <
+				MX6QDL_PAD_GPIO_3__I2C3_SCL		0x4001b8b1
+				MX6QDL_PAD_GPIO_6__I2C3_SDA		0x4001b8b1
+				/*MX6QDL_PAD_GPIO_16__I2C3_SDA		0x4001b8b1*/
+			>;
+		};
+
 		pinctrl_mclk: mclkgrp {
 			fsl,pins = <
 				MX6QDL_PAD_GPIO_0__CCM_CLKO1		0x130b0
 			>;
 		};
 
-		pinctrl_spdif: spdifgrp {
+		pinctrl_uart4: uart4grp {
 			fsl,pins = <
-				MX6QDL_PAD_ENET_RXD0__SPDIF_OUT		0x1b0b0
+				MX6QDL_PAD_KEY_COL0__UART4_TX_DATA	0x1b0b1
+				MX6QDL_PAD_KEY_ROW0__UART4_RX_DATA	0x1b0b1
 			>;
 		};
 
-		pinctrl_uart1: uart1grp {
+		pinctrl_uart5: uart5grp {
 			fsl,pins = <
-				MX6QDL_PAD_CSI0_DAT10__UART1_TX_DATA	0x1b0b1
-				MX6QDL_PAD_CSI0_DAT11__UART1_RX_DATA	0x1b0b1
-			>;
-		};
-
-		pinctrl_uart3: uart3grp {
-			fsl,pins = <
-				MX6QDL_PAD_EIM_D24__UART3_TX_DATA	0x1b0b1
-				MX6QDL_PAD_EIM_D25__UART3_RX_DATA	0x1b0b1
-				MX6QDL_PAD_EIM_D23__UART3_CTS_B		0x1b0b1
-				MX6QDL_PAD_EIM_EB3__UART3_RTS_B		0x1b0b1
+				MX6QDL_PAD_KEY_COL1__UART5_TX_DATA	0x1b0b1
+				MX6QDL_PAD_KEY_ROW1__UART5_RX_DATA	0x1b0b1
 			>;
 		};
 
 		pinctrl_usdhc1: usdhc1grp {
 			fsl,pins = <
-				MX6QDL_PAD_SD1_CMD__SD1_CMD		0x17059
-				MX6QDL_PAD_SD1_CLK__SD1_CLK		0x10059
-				MX6QDL_PAD_SD1_DAT0__SD1_DATA0		0x17059
-				MX6QDL_PAD_SD1_DAT1__SD1_DATA1		0x17059
-				MX6QDL_PAD_SD1_DAT2__SD1_DATA2		0x17059
-				MX6QDL_PAD_SD1_DAT3__SD1_DATA3		0x17059
+				MX6QDL_PAD_SD1_CMD__SD1_CMD		0x17071
+				MX6QDL_PAD_SD1_CLK__SD1_CLK		0x10071
+				MX6QDL_PAD_SD1_DAT0__SD1_DATA0		0x17071
+				MX6QDL_PAD_SD1_DAT1__SD1_DATA1		0x17071
+				MX6QDL_PAD_SD1_DAT2__SD1_DATA2		0x17071
+				MX6QDL_PAD_SD1_DAT3__SD1_DATA3		0x17071
 			>;
 		};
 
@@ -196,246 +615,14 @@
 				MX6QDL_PAD_SD3_DAT3__SD3_DATA3		0x17059
 			>;
 		};
-	};
-};
-
-&fec {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_enet>;
-	phy-mode = "rgmii";
-	phy-reset-gpios = <&gpio3 29 GPIO_ACTIVE_LOW>;
-	interrupts-extended = <&gpio1 6 IRQ_TYPE_LEVEL_HIGH>,
-			      <&intc 0 119 IRQ_TYPE_LEVEL_HIGH>;
-	fsl,err006687-workaround-present;
-	status = "okay";
-};
-
-&spdif {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_spdif>;
-	status = "okay";
-};
-
-&ssi1 {
-	status = "okay";
-};
-
-&uart1 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_uart1>;
-	status = "okay";
-};
-
-&uart3 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_uart3>;
-	uart-has-rtscts;
-	status = "okay";
-};
-
-&usbh1 {
-	status = "okay";
-};
 
 
-&usdhc1 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_usdhc1>;
-	cd-gpios = <&gpio1 2 GPIO_ACTIVE_LOW>;
-	status = "okay";
-};
-
-&usdhc3 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_usdhc3>;
-	cd-gpios = <&gpio3 9 GPIO_ACTIVE_LOW>;
-	status = "okay";
-};
-
-/ {
-	reg_eth_phy: regulator-eth-phy {
-		compatible = "regulator-fixed";
-		regulator-name = "ETH_PHY";
-		regulator-min-microvolt = <3300000>;
-		regulator-max-microvolt = <3300000>;
-		gpio = <&gpio7 13 GPIO_ACTIVE_LOW>;
-	};
-};
-
-&hdmi {
-	ddc-i2c-bus = <&i2c2>;
-	status = "okay";
-};
-
-&i2c3 {
-	clock-frequency = <100000>;
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_i2c3>;
-	status = "okay";
-
-	pmic: pfuze100@8 {
-		compatible = "fsl,pfuze100";
-		reg = <0x08>;
-
-		regulators {
-			sw1a_reg: sw1ab {
-				regulator-min-microvolt = <300000>;
-				regulator-max-microvolt = <1875000>;
-				regulator-boot-on;
-				regulator-always-on;
-				regulator-ramp-delay = <6250>;
-			};
-
-			sw1c_reg: sw1c {
-				regulator-min-microvolt = <300000>;
-				regulator-max-microvolt = <1875000>;
-				regulator-boot-on;
-				regulator-always-on;
-				regulator-ramp-delay = <6250>;
-			};
-
-			sw2_reg: sw2 {
-				regulator-min-microvolt = <800000>;
-				regulator-max-microvolt = <3300000>;
-				regulator-boot-on;
-				regulator-always-on;
-				regulator-ramp-delay = <6250>;
-			};
-
-			sw3a_reg: sw3a {
-				regulator-min-microvolt = <400000>;
-				regulator-max-microvolt = <1975000>;
-				regulator-boot-on;
-				regulator-always-on;
-			};
-
-			sw3b_reg: sw3b {
-				regulator-min-microvolt = <400000>;
-				regulator-max-microvolt = <1975000>;
-				regulator-boot-on;
-				regulator-always-on;
-			};
-
-			sw4_reg: sw4 {
-				regulator-min-microvolt = <800000>;
-				regulator-max-microvolt = <3300000>;
-			};
-
-			swbst_reg: swbst {
-				regulator-min-microvolt = <5000000>;
-				regulator-max-microvolt = <5150000>;
-			};
-
-			snvs_reg: vsnvs {
-				regulator-min-microvolt = <1000000>;
-				regulator-max-microvolt = <3000000>;
-				regulator-boot-on;
-				regulator-always-on;
-			};
-
-			vref_reg: vrefddr {
-				regulator-boot-on;
-				regulator-always-on;
-			};
-
-			vgen1_reg: vgen1 {
-				regulator-min-microvolt = <800000>;
-				regulator-max-microvolt = <1550000>;
-			};
-
-			vgen2_reg: vgen2 {
-				regulator-min-microvolt = <1500000>;
-				regulator-max-microvolt = <1500000>;
-				regulator-boot-on;
-				regulator-always-on;
-			};
-
-			vgen3_reg: vgen3 {
-				regulator-min-microvolt = <1800000>;
-				regulator-max-microvolt = <3300000>;
-				regulator-always-on;
-			};
-
-			vgen4_reg: vgen4 {
-				regulator-min-microvolt = <1800000>;
-				regulator-max-microvolt = <3300000>;
-				regulator-always-on;
-			};
-
-			vgen5_reg: vgen5 {
-				regulator-min-microvolt = <1800000>;
-				regulator-max-microvolt = <3300000>;
-				regulator-always-on;
-			};
-
-			vgen6_reg: vgen6 {
-				regulator-min-microvolt = <1800000>;
-				regulator-max-microvolt = <3300000>;
-				regulator-always-on;
-			};
-		};
-	};
-};
-
-&fec {
-	phy-supply = <&reg_eth_phy>;
-	status = "okay";
-};
-
-&iomuxc {
-	pinctrl-0 = <&pinctrl_hog>;
-
-	imx6qdl-wandboard {
-		pinctrl_hog: hoggrp {
+		pinctrl_pmic_dialog: pmic_dialoggrp {
 			fsl,pins = <
-				MX6QDL_PAD_EIM_D22__USB_OTG_PWR		0x80000000	/* USB Power Enable */
-				MX6QDL_PAD_GPIO_2__GPIO1_IO02		0x80000000	/* USDHC1 CD */
-				MX6QDL_PAD_EIM_DA9__GPIO3_IO09		0x80000000	/* uSDHC3 CD */
-				MX6QDL_PAD_EIM_D29__GPIO3_IO29   	0x1f0b1		/* RGMII PHY reset */
+				MX6QDL_PAD_GPIO_17__GPIO7_IO12 0x1b0b0
 			>;
 		};
 
-		pinctrl_enet: enetgrp {
-			fsl,pins = <
-				MX6QDL_PAD_ENET_MDIO__ENET_MDIO		0x1b0b0
-				MX6QDL_PAD_ENET_MDC__ENET_MDC		0x1b0b0
-				MX6QDL_PAD_RGMII_TXC__RGMII_TXC		0x1b030
-				MX6QDL_PAD_RGMII_TD0__RGMII_TD0		0x1b030
-				MX6QDL_PAD_RGMII_TD1__RGMII_TD1		0x1b030
-				MX6QDL_PAD_RGMII_TD2__RGMII_TD2		0x1b030
-				MX6QDL_PAD_RGMII_TD3__RGMII_TD3		0x1b030
-				MX6QDL_PAD_RGMII_TX_CTL__RGMII_TX_CTL	0x1b030
-				MX6QDL_PAD_ENET_REF_CLK__ENET_TX_CLK	0x1b0b0
-				MX6QDL_PAD_RGMII_RXC__RGMII_RXC		0x1b030
-				MX6QDL_PAD_RGMII_RD0__RGMII_RD0		0x1b030
-				MX6QDL_PAD_RGMII_RD1__RGMII_RD1		0x1b030
-				MX6QDL_PAD_RGMII_RD2__RGMII_RD2		0x1b030
-				MX6QDL_PAD_RGMII_RD3__RGMII_RD3		0x1b030
-				MX6QDL_PAD_RGMII_RX_CTL__RGMII_RX_CTL	0x1b030
-				MX6QDL_PAD_GPIO_6__ENET_IRQ		0x000b1
-			>;
-		};
-
-		pinctrl_i2c3: i2c3grp {
-			fsl,pins = <
-				MX6QDL_PAD_GPIO_5__I2C3_SCL		0x4001b8b1
-				MX6QDL_PAD_GPIO_16__I2C3_SDA		0x4001b8b1
-			>;
-		};
-
-		pinctrl_spdif: spdifgrp {
-			fsl,pins = <
-				MX6QDL_PAD_GPIO_19__SPDIF_OUT		0x1b0b0
-			>;
-		};
 	};
 };
 
-&usdhc2 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_usdhc2>;
-	bus-width = <4>;
-	no-1-8-v;
-	non-removable;
-	status = "okay";
-};
