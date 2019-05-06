@@ -222,12 +222,20 @@ static int tc358768_dsi_xfer_short(struct tc358768_drv_data *ddata,
 	return 0;
 }
 
-static void tc358768_sw_reset(struct tc358768_drv_data *ddata)
+static int  tc358768_sw_reset(struct tc358768_drv_data *ddata)
 {
+  int r;
 	/* Assert Reset */
-	tc358768_write(ddata, TC358768_SYSCTL, 1);
+	r = tc358768_write(ddata, TC358768_SYSCTL, 1);
+  if(r){
+    return r;
+  }
 	/* Release Reset, Exit Sleep */
-	tc358768_write(ddata, TC358768_SYSCTL, 0);
+	r = tc358768_write(ddata, TC358768_SYSCTL, 0);
+  if(r){
+    return r;
+  }
+  return 0;
 }
 
 static u32 tc358768_pll_to_pclk(struct tc358768_drv_data *ddata, u32 pll)
@@ -355,10 +363,14 @@ static void tc358768_setup_pll(struct tc358768_drv_data *ddata)
 		(frs << 10) | (0x2 << 8) | (1 << 4) | (1 << 1) | (1 << 0));
 }
 
-static void tc358768_power_on(struct tc358768_drv_data *ddata)
+static int tc358768_power_on(struct tc358768_drv_data *ddata)
 {
+  int r;
 
-	tc358768_sw_reset(ddata);
+	r = tc358768_sw_reset(ddata);
+  if(r){
+    return r;
+  }
 
 	tc358768_setup_pll(ddata);
 
@@ -436,6 +448,7 @@ static void tc358768_power_on(struct tc358768_drv_data *ddata)
 
 	/* set PP_en */
 	tc358768_update_bits(ddata, TC358768_CONFCTL, 1 << 6, 1 << 6);
+  return 0;
 }
 
 static void tc358768_power_off(struct tc358768_drv_data *ddata)
@@ -469,7 +482,9 @@ static int tc358768_enable(struct tc358768_drv_data *ddata )
 	/* wait for encoder clocks to stabilize */
 	usleep_range(1000, 2000);
 
-	tc358768_power_on(ddata);
+	r = tc358768_power_on(ddata);
+	if (r)
+		return r;
 
 	/* enable panel */
 	tc358768_dsi_xfer_short(ddata, MIPI_DSI_TURN_ON_PERIPHERAL, 0, 0);
@@ -547,8 +562,10 @@ static int tc358768_i2c_probe(struct i2c_client *client,
 	ddata->reset_gpio = gpio;
 
   r = tc358768_enable(ddata);
-  if(r)
+  if(r) {
+		dev_err(dev, "enable failed");
 		return r;
+  }
 
 	return 0;
 }
