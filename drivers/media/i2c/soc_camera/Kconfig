@@ -1,5 +1,11 @@
 comment "soc_camera sensor drivers"
 
+config SOC_CAMERA_GCB
+	tristate "gemmi cam bridge support"
+	depends on SOC_CAMERA && I2C
+	help
+	  This is a V4L2 camera driver for the gemmi cam bridge
+
 config SOC_CAMERA_MT9M001
 	tristate "mt9m001 support"
 	depends on SOC_CAMERA && I2C
